@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>USB Personalizada XV Naomi - Producciones Foro 7</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230a0a0f'/%3E%3Crect x='8' y='6' width='16' height='20' rx='3' fill='%235a3a1a' stroke='%23d4af37' stroke-width='0.8'/%3E%3Crect x='11' y='22' width='10' height='6' rx='1' fill='%23a0a0b0'/%3E%3Ccircle cx='16' cy='13' r='2' fill='%23d4af37' opacity='0.6'/%3E%3C/svg%3E">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #0a0a0f;
+            overflow: hidden;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            touch-action: none;
+            user-select: none;
+        }
+        canvas { display: block; width: 100vw; height: 100vh; }
+        #hint {
+            position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+            color: rgba(212,175,55,0.5); font-size: 12px; letter-spacing: 3px;
+            font-family: monospace; text-transform: uppercase;
+            pointer-events: none; transition: opacity 0.5s;
+        }
+        #title-overlay {
+            position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+            color: rgba(212,175,55,0.6); font-size: 11px; letter-spacing: 4px;
+            font-family: monospace; text-transform: uppercase;
+            pointer-events: none; text-align: center;
+        }
+        #title-overlay .sub {
+            display: block; font-size: 9px; color: rgba(255,255,255,0.3);
+            letter-spacing: 2px; margin-top: 4px;
+        }
+        #eject-btn {
+            position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+            background: rgba(212,175,55,0.1); border: 1px solid rgba(212,175,55,0.3);
+            color: #d4af37; padding: 10px 28px; border-radius: 8px;
+            font-family: monospace; font-size: 12px; letter-spacing: 3px;
+            text-transform: uppercase; cursor: pointer; transition: all 0.3s;
+            backdrop-filter: blur(10px);
+        }
+        #eject-btn:hover { background: rgba(212,175,55,0.2); border-color: rgba(212,175,55,0.5); }
+    </style>
+</head>
+<body>
+    <canvas id="c"></canvas>
+    <div id="title-overlay">
+        USB Personalizada
+        <span class="sub">Producciones Foro 7</span>
+    </div>
+    <button id="eject-btn">Expulsar Tapa</button>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+    (function() {
+        'use strict';
+
+        // --- SCENE SETUP ---
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x0a0a0f, 0.04);
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+        const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('c'), antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 0.85;
+
+        // --- DIMENSIONS ---
+        const BW = 1.2;   // body width
+        const BH = 0.5;   // body height
+        const BD = 3.0;   // body depth (length)
+        const CW = 0.55;  // connector width
+        const CH = 0.25;  // connector height
+        const CD = 1.0;   // connector depth
+        const CAP_D = 1.2; // cap depth
+
+        // --- TEXTURES ---
+        function createWoodTexture(w, h) {
+            const canvas = document.createElement('canvas');
+            canvas.width = w; canvas.height = h;
+            const ctx = canvas.getContext('2d');
+
+            // Base wood color
+            ctx.fillStyle = '#5a3a1a';
+            ctx.fillRect(0, 0, w, h);
+
+            // Wood grain lines
+            for (let i = 0; i < 60; i++) {
+                const y = Math.random() * h;
+                const lineW = Math.random() * 3 + 0.5;
+                ctx.strokeStyle = `rgba(${70 + Math.random()*30}, ${40 + Math.random()*20}, ${15 + Math.random()*10}, ${0.15 + Math.random()*0.15})`;
+                ctx.lineWidth = lineW;
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                for (let x = 0; x < w; x += 10) {
+                    ctx.lineTo(x, y + Math.sin(x * 0.02 + i) * 2);
+                }
+                ctx.stroke();
+            }
+
+            // Subtle knots
+            for (let i = 0; i < 3; i++) {
+                const kx = Math.random() * w;
+                const ky = Math.random() * h;
+                const kr = Math.random() * 12 + 5;
+                const grad = ctx.createRadialGradient(kx, ky, 0, kx, ky, kr);
+                grad.addColorStop(0, 'rgba(60,30,10,0.3)');
+                grad.addColorStop(1, 'rgba(60,30,10,0)');
+                ctx.fillStyle = grad;
+                ctx.beginPath();
+                ctx.arc(kx, ky, kr, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+            return tex;
+        }
+
+        function createEngravingTexture(w, h, text1, text2) {
+            const canvas = document.createElement('canvas');
+            canvas.width = w; canvas.height = h;
+            const ctx = canvas.getContext('2d');
+
+            // Transparent base
+            ctx.clearRect(0, 0, w, h);
+
+            // Engraved text
+            ctx.fillStyle = 'rgba(212, 175, 55, 0.6)';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            ctx.font = 'bold 48px Georgia, serif';
+            ctx.fillText(text1, w/2, h * 0.38);
+
+            ctx.font = '18px monospace';
+            ctx.fillStyle = 'rgba(212, 175, 55, 0.4)';
+            ctx.fillText(text2, w/2, h * 0.62);
+
+            // Decorative line
+            ctx.strokeStyle = 'rgba(212, 175, 55, 0.3)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(w * 0.25, h * 0.5);
+            ctx.lineTo(w * 0.75, h * 0.5);
+            ctx.stroke();
+
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        function createMetalTexture(w, h) {
+            const canvas = document.createElement('canvas');
+            canvas.width = w; canvas.height = h;
+            const ctx = canvas.getContext('2d');
+
+            // Brushed metal base
+            ctx.fillStyle = '#b0b0c0';
+            ctx.fillRect(0, 0, w, h);
+
+            // Brush strokes
+            for (let i = 0; i < 200; i++) {
+                const y = Math.random() * h;
+                ctx.strokeStyle = `rgba(${180 + Math.random()*40}, ${180 + Math.random()*40}, ${200 + Math.random()*40}, 0.1)`;
+                ctx.lineWidth = 0.5;
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(w, y + (Math.random()-0.5)*2);
+                ctx.stroke();
+            }
+
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        const woodTex = createWoodTexture(512, 512);
+        const metalTex = createMetalTexture(256, 256);
+        const engravingTex = createEngravingTexture(512, 256, 'XV Naomi', 'PRODUCCIONES FORO 7');
+
+        // --- MATERIALS ---
+        const woodMat = new THREE.MeshPhongMaterial({
+            map: woodTex,
+            specular: 0x332211,
+            shininess: 20,
+        });
+
+        const woodDarkMat = new THREE.MeshPhongMaterial({
+            map: woodTex,
+            color: 0x3a2510,
+            specular: 0x221100,
+            shininess: 15,
+        });
+
+        const metalMat = new THREE.MeshPhongMaterial({
+            map: metalTex,
+            specular: 0xffffff,
+            shininess: 100,
+            color: 0xc0c0d0,
+        });
+
+        const metalDarkMat = new THREE.MeshPhongMaterial({
+            color: 0x888898,
+            specular: 0xffffff,
+            shininess: 80,
+        });
+
+        const goldAccentMat = new THREE.MeshPhongMaterial({
+            color: 0xd4af37,
+            specular: 0xffffff,
+            shininess: 60,
+            emissive: 0xd4af37,
+            emissiveIntensity: 0.05,
+        });
+
+        // --- USB GROUP ---
+        const usbGroup = new THREE.Group();
+        const bodyGroup = new THREE.Group();
+        const capGroup = new THREE.Group();
+
+        // === BODY ===
+        // Main wooden body
+        const bodyGeo = new THREE.BoxGeometry(BW, BH, BD);
+        const body = new THREE.Mesh(bodyGeo, woodMat);
+        bodyGroup.add(body);
+
+        // Rounded edge strips (gold accent along top edges)
+        const edgeGeo = new THREE.CylinderGeometry(0.015, 0.015, BD - 0.05, 8);
+        const edgePositions = [
+            [BW/2, BH/2, 0],
+            [-BW/2, BH/2, 0],
+            [BW/2, -BH/2, 0],
+            [-BW/2, -BH/2, 0],
+        ];
+        edgePositions.forEach(pos => {
+            const edge = new THREE.Mesh(edgeGeo, goldAccentMat);
+            edge.position.set(pos[0], pos[1], pos[2]);
+            edge.rotation.x = Math.PI / 2;
+            bodyGroup.add(edge);
+        });
+
+        // Engraving on top face
+        const engravingGeo = new THREE.PlaneGeometry(BW * 0.85, BD * 0.5);
+        const engravingMat = new THREE.MeshPhongMaterial({
+            map: engravingTex,
+            transparent: true,
+            depthWrite: false,
+        });
+        const engraving = new THREE.Mesh(engravingGeo, engravingMat);
+        engraving.rotation.x = -Math.PI / 2;
+        engraving.position.y = BH / 2 + 0.005;
+        engraving.position.z = -0.3;
+        bodyGroup.add(engraving);
+
+        // USB-A Connector
+        const connGeo = new THREE.BoxGeometry(CW, CH, CD);
+        const conn = new THREE.Mesh(connGeo, metalMat);
+        conn.position.z = BD / 2 + CD / 2;
+        bodyGroup.add(conn);
+
+        // Connector inner void (dark slot)
+        const slotGeo = new THREE.BoxGeometry(CW - 0.08, CH - 0.06, 0.15);
+        const slot = new THREE.Mesh(slotGeo, new THREE.MeshPhongMaterial({ color: 0x1a1a2a }));
+        slot.position.z = BD / 2 + CD + 0.01;
+        bodyGroup.add(slot);
+
+        // Connector shell lines
+        for (let i = 0; i < 2; i++) {
+            const lineGeo = new THREE.BoxGeometry(CW + 0.02, 0.01, CD);
+            const line = new THREE.Mesh(lineGeo, metalDarkMat);
+            line.position.set(0, (i === 0 ? 1 : -1) * CH / 2, BD / 2 + CD / 2);
+            bodyGroup.add(line);
+        }
+
+        // LED indicator
+        const ledGeo = new THREE.SphereGeometry(0.03, 12, 12);
+        const ledMat = new THREE.MeshPhongMaterial({
+            color: 0x00ff88,
+            emissive: 0x00ff88,
+            emissiveIntensity: 0.8,
+        });
+        const led = new THREE.Mesh(ledGeo, ledMat);
+        led.position.set(BW / 2 - 0.08, BH / 2 + 0.005, BD / 2 - 0.15);
+        bodyGroup.add(led);
+
+        // === CAP ===
+        const capGeo = new THREE.BoxGeometry(BW + 0.06, BH + 0.06, CAP_D);
+        const cap = new THREE.Mesh(capGeo, woodDarkMat);
+        capGroup.add(cap);
+
+        // Cap inner (slightly hollow feel)
+        const capInnerGeo = new THREE.BoxGeometry(BW - 0.02, BH - 0.02, CAP_D - 0.08);
+        const capInner = new THREE.Mesh(capInnerGeo, new THREE.MeshPhongMaterial({ color: 0x1a1008, side: THREE.BackSide }));
+        capInner.position.z = 0.02;
+        capGroup.add(capInner);
+
+        // Cap gold ring
+        const ringGeo = new THREE.BoxGeometry(BW + 0.08, BH + 0.08, 0.03);
+        const ring = new THREE.Mesh(ringGeo, goldAccentMat);
+        ring.position.z = -CAP_D / 2;
+        capGroup.add(ring);
+
+        // Position cap over connector end
+        capGroup.position.z = BD / 2 + CD / 2 + 0.05;
+
+        bodyGroup.add(capGroup);
+        usbGroup.add(bodyGroup);
+        scene.add(usbGroup);
+
+        // --- CAP ANIMATION ---
+        let capEjected = false;
+        let capOffset = 0;
+        let targetCapOffset = 0;
+        let isTransitioning = false;
+
+        function toggleCap() {
+            if (isTransitioning) return;
+            capEjected = !capEjected;
+            targetCapOffset = capEjected ? 2.5 : 0;
+            isTransitioning = true;
+            document.getElementById('eject-btn').textContent = capEjected ? 'Poner Tapa' : 'Expulsar Tapa';
+            setTimeout(() => { isTransitioning = false; }, 800);
+        }
+
+        document.getElementById('eject-btn').addEventListener('click', toggleCap);
+
+        // --- LIGHTS ---
+        const ambLight = new THREE.AmbientLight(0x404050, 0.4);
+        scene.add(ambLight);
+
+        const mainLight = new THREE.DirectionalLight(0xffffff, 0.7);
+        mainLight.position.set(3, 5, 4);
+        scene.add(mainLight);
+
+        const warmLight = new THREE.PointLight(0xd4af37, 0.3, 15);
+        warmLight.position.set(-3, 2, 2);
+        scene.add(warmLight);
+
+        const coolLight = new THREE.PointLight(0x4488cc, 0.2, 15);
+        coolLight.position.set(2, -1, -3);
+        scene.add(coolLight);
+
+        const rimLight = new THREE.PointLight(0xffffff, 0.3, 10);
+        rimLight.position.set(0, 3, -4);
+        scene.add(rimLight);
+
+        // --- CAMERA ---
+        const camDist = 5;
+        camera.position.set(camDist * 0.5, camDist * 0.5, camDist * 0.7);
+        camera.lookAt(0, 0, 0.5);
+
+        // --- INTERACTION ---
+        let rotX = -0.3, rotY = 0.5;
+        let targetRotX = rotX, targetRotY = rotY;
+        let isDragging = false;
+        let dragStartX = 0, dragStartY = 0;
+        let dragDistance = 0;
+
+        function onPointerDown(x, y) {
+            isDragging = true;
+            dragStartX = x;
+            dragStartY = y;
+            dragDistance = 0;
+        }
+        function onPointerMove(x, y) {
+            if (!isDragging) return;
+            const dx = x - dragStartX;
+            const dy = y - dragStartY;
+            dragDistance += Math.abs(dx) + Math.abs(dy);
+            targetRotY += dx * 0.006;
+            targetRotX += dy * 0.006;
+            targetRotX = Math.max(-1.2, Math.min(0.5, targetRotX));
+            dragStartX = x;
+            dragStartY = y;
+        }
+        function onPointerUp() {
+            isDragging = false;
+        }
+
+        // Mouse
+        document.addEventListener('mousedown', e => onPointerDown(e.clientX, e.clientY));
+        document.addEventListener('mousemove', e => onPointerMove(e.clientX, e.clientY));
+        document.addEventListener('mouseup', onPointerUp);
+
+        // Touch
+        document.addEventListener('touchstart', e => {
+            e.preventDefault();
+            onPointerDown(e.touches[0].clientX, e.touches[0].clientY);
+        }, { passive: false });
+        document.addEventListener('touchmove', e => {
+            e.preventDefault();
+            onPointerMove(e.touches[0].clientX, e.touches[0].clientY);
+        }, { passive: false });
+        document.addEventListener('touchend', onPointerUp);
+
+        // Scroll zoom
+        document.addEventListener('wheel', e => {
+            e.preventDefault();
+            camera.position.multiplyScalar(e.deltaY > 0 ? 1.05 : 0.95);
+            const d = camera.position.length();
+            if (d < 2.5) camera.position.setLength(2.5);
+            if (d > 10) camera.position.setLength(10);
+        }, { passive: false });
+
+        // --- LED BLINK ---
+        let ledTime = 0;
+
+        // --- ANIMATE ---
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Smooth rotation
+            rotX += (targetRotX - rotX) * 0.08;
+            rotY += (targetRotY - rotY) * 0.08;
+            usbGroup.rotation.x = rotX;
+            usbGroup.rotation.y = rotY;
+
+            // Cap animation
+            capOffset += (targetCapOffset - capOffset) * 0.06;
+            capGroup.position.z = BD / 2 + CD / 2 + 0.05 + capOffset;
+
+            // LED blink
+            ledTime += 0.03;
+            const blink = capEjected ? (Math.sin(ledTime * 2) * 0.5 + 0.5) : 0.3;
+            ledMat.emissiveIntensity = blink;
+
+            // Gentle float
+            usbGroup.position.y = Math.sin(Date.now() * 0.001) * 0.05;
+
+            camera.lookAt(0, 0, 0.5);
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        // --- RESIZE ---
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+    })();
+    </script>
+</body>
+</html>
